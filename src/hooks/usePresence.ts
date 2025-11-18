@@ -13,7 +13,7 @@ export function usePresence() {
     try {
       const data = await fetchPresence(datebegin);
       setRows(
-        data.map((d) => ({ ...d, uslp_DateEnd: d.uslp_DateEnd ?? null })),
+        data.map((d: any) => ({ ...d, uslp_DateEnd: d.uslp_DateEnd ?? null })),
       );
     } catch (e: any) {
       setError(e?.message || 'Ошибка запроса');
