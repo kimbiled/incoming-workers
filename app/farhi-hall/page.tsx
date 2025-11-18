@@ -1,15 +1,15 @@
-'use client';
-import dayjs from 'dayjs';
-import React, { useMemo, useState } from 'react';
-import LivePresencePanel from '@/features/presence/LivePresencePanel';
-import HeaderBar from '@/components/HeaderBar';
+"use client";
+import dayjs from "dayjs";
+import React, { useMemo, useState } from "react";
+import LivePresencePanel from "@/features/presence/LivePresencePanel";
+import HeaderBar from "@/components/HeaderBar";
 
-export default function Page() {
+export default function FarhiPage() {
   const [date, setDate] = useState(() => dayjs());
   const [pollMs, setPollMs] = useState(
-    Number(process.env.NEXT_PUBLIC_DEFAULT_POLL_MS ?? 15000),
+    Number(process.env.NEXT_PUBLIC_DEFAULT_POLL_MS ?? 15000)
   );
-  const dateParam = useMemo(() => date.format('DD.MM.YYYY'), [date]);
+  const dateParam = useMemo(() => date.format("DD.MM.YYYY"), [date]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -23,7 +23,7 @@ export default function Page() {
         <LivePresencePanel
           dateParam={dateParam}
           pollMs={pollMs}
-          locationFilter={null}
+          locationFilter="Farhi Hall"
         />
       </main>
     </div>
