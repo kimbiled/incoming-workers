@@ -19,7 +19,6 @@ export async function GET(req: Request) {
 
     const upstreamUrl = new URL(PATH, BASE);
     upstreamUrl.searchParams.set('datebegin', datebegin);
-    upstreamUrl.searchParams.set('dateend', datebegin);
 
     const res = await fetch(upstreamUrl.toString(), {
       headers: { accept: 'application/json' },
@@ -28,6 +27,7 @@ export async function GET(req: Request) {
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');
+      console.error('UPSTREAM ERROR', res.status, text.slice(0, 300));
       return NextResponse.json(
         { error: `Upstream HTTP ${res.status}`, details: text.slice(0, 300) },
         { status: 502 },
@@ -38,6 +38,7 @@ export async function GET(req: Request) {
     const main = Array.isArray((raw as any).Main) ? (raw as any).Main : [];
     return NextResponse.json(main);
   } catch (err: any) {
+    console.error('PROXY ERROR', err);
     return NextResponse.json(
       { error: 'Proxy error', message: String(err?.message ?? err) },
       { status: 500 },
