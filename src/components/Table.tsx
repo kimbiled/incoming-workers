@@ -1,26 +1,52 @@
-import { classNames } from '@/lib/classNames';
+import clsx from 'clsx';
+import React from 'react';
 
-export function Th({ children }: { children: React.ReactNode }) {
+interface ThProps extends React.ThHTMLAttributes<HTMLTableHeaderCellElement> {
+  sortable?: boolean;
+  active?: boolean;
+  direction?: 'none' | 'asc' | 'desc';
+}
+
+export function Th({
+  children,
+  sortable,
+  active,
+  direction,
+  className,
+  ...rest
+}: ThProps) {
   return (
     <th
-      scope="col"
-      className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600"
+      {...rest}
+      className={clsx(
+        'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500',
+        sortable && 'cursor-pointer select-none',
+        className,
+      )}
     >
-      {children}
+      <span className="inline-flex items-center gap-1">
+        {children}
+        {sortable && (
+          <span className="text-[10px] text-gray-400">
+            {active
+              ? direction === 'asc'
+                ? '▲'
+                : direction === 'desc'
+                ? '▼'
+                : '⇅'
+              : '⇅'}
+          </span>
+        )}
+      </span>
     </th>
   );
 }
 
-export function Td({
-  children,
-  className = '',
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+export function Td(props: React.TdHTMLAttributes<HTMLTableCellElement>) {
   return (
-    <td className={classNames('px-4 py-3 text-sm text-gray-800', className)}>
-      {children}
-    </td>
+    <td
+      {...props}
+      className={clsx('px-4 py-3 text-sm text-gray-700', props.className)}
+    />
   );
 }

@@ -22,6 +22,28 @@ export default function LivePresencePanel({
 }) {
   const { rows, loading, error, load } = usePresence();
   const [query, setQuery] = useState('');
+  type SortKey =
+    | 'usr_Name'
+    | 'usrr_Name'
+    | 'loc_Name'
+    | 'uslp_DateBegin'
+    | 'uslp_DateEnd'
+    | 'duration';
+  type SortDir = 'none' | 'asc' | 'desc';
+
+  const [sortKey, setSortKey] = useState<SortKey>('uslp_DateBegin');
+  const [sortDir, setSortDir] = useState<SortDir>('none');
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey !== key) {
+      setSortKey(key);
+      setSortDir('asc');
+      return;
+    }
+    setSortDir((prev) =>
+      prev === 'none' ? 'asc' : prev === 'asc' ? 'desc' : 'none',
+    );
+  };
 
   usePolling(() => load(dateParam), pollMs, [dateParam]);
   useEffect(() => {
@@ -39,7 +61,7 @@ export default function LivePresencePanel({
     const [dd, mm, yyyy] = dateParam.split('.');
     if (!dd || !mm || !yyyy) return rows;
 
-    const target = `${yyyy}-${mm}-${dd}`; 
+    const target = `${yyyy}-${mm}-${dd}`;
 
     return rows.filter((r) => {
       if (!r.uslp_DateBegin) return false;
@@ -74,33 +96,73 @@ export default function LivePresencePanel({
     return arr.filter(
       (r) =>
         r.usr_Name?.toLowerCase().includes(q) ||
-        r.loc_Name?.toLowerCase().includes(q),
+        r.loc_Name?.toLowerCase().includes(q) ||
+        r.usrr_Name?.toLowerCase().includes(q),
     );
   };
 
   const filteredActive = useMemo(() => filterByQuery(active), [active, query]);
-  const LOCATIONS = ['Office', 'Farhi Hall', 'SharZhum', 'Farhi'] as const;
-
-  const groupedActive = useMemo(() => {
-    const byLoc: Record<string, Presence[]> = {};
-    LOCATIONS.forEach((loc) => {
-      byLoc[loc] = [];
-    });
-
-    filteredActive.forEach((r) => {
-      const loc = r.loc_Name ?? '';
-      if (LOCATIONS.includes(loc as any)) {
-        byLoc[loc].push(r);
-      }
-    });
-
-    return byLoc;
-  }, [filteredActive]);
 
   const filteredFinished = useMemo(
     () => filterByQuery(finished),
     [finished, query],
   );
+
+  const sortedFinished = useMemo(() => {
+    if (sortDir === 'none') return filteredFinished;
+
+    const arr = [...filteredFinished];
+
+    const getDurationMs = (r: Presence) => {
+      const start = new Date(r.uslp_DateBegin).valueOf();
+      const end = r.uslp_DateEnd
+        ? new Date(r.uslp_DateEnd).valueOf()
+        : Date.now();
+      return end - start;
+    };
+
+    arr.sort((a, b) => {
+      const dir = sortDir === 'asc' ? 1 : -1;
+
+      let va: string | number = '';
+      let vb: string | number = '';
+
+      switch (sortKey) {
+        case 'usr_Name':
+          va = a.usr_Name;
+          vb = b.usr_Name;
+          break;
+        case 'usrr_Name':
+          va = a.usrr_Name ?? '';
+          vb = b.usrr_Name ?? '';
+          break;
+        case 'loc_Name':
+          va = a.loc_Name ?? '';
+          vb = b.loc_Name ?? '';
+          break;
+        case 'uslp_DateBegin':
+          va = new Date(a.uslp_DateBegin).valueOf();
+          vb = new Date(b.uslp_DateBegin).valueOf();
+          break;
+        case 'uslp_DateEnd':
+          va = a.uslp_DateEnd ? new Date(a.uslp_DateEnd).valueOf() : 0;
+          vb = b.uslp_DateEnd ? new Date(b.uslp_DateEnd).valueOf() : 0;
+          break;
+        case 'duration':
+          va = getDurationMs(a);
+          vb = getDurationMs(b);
+          break;
+      }
+
+      if (typeof va === 'number' && typeof vb === 'number') {
+        return (va - vb) * dir;
+      }
+
+      return String(va).localeCompare(String(vb), 'ru') * dir;
+    });
+
+    return arr;
+  }, [filteredFinished, sortKey, sortDir]);
 
   return (
     <>
@@ -109,7 +171,7 @@ export default function LivePresencePanel({
         <div className="flex gap-2">
           <input
             type="text"
-            placeholder="Поиск: ФИО или локация"
+            placeholder="Поиск: ФИО, должность или локация"
             className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:ring-2 focus:ring-blue-500 md:w-80"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -163,21 +225,73 @@ export default function LivePresencePanel({
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <Th>Сотрудник</Th>
-                    <Th>Локация</Th>
-                    <Th>Начало</Th>
-                    <Th>Завершение</Th>
-                    <Th>Итого</Th>
+                    <Th
+                      sortable
+                      active={sortKey === 'usr_Name'}
+                      direction={sortDir}
+                      onClick={() => handleSort('usr_Name')}
+                    >
+                      Сотрудник
+                    </Th>
+
+                    <Th
+                      sortable
+                      active={sortKey === 'usrr_Name'}
+                      direction={sortDir}
+                      onClick={() => handleSort('usrr_Name')}
+                    >
+                      Должность
+                    </Th>
+
+                    <Th
+                      sortable
+                      active={sortKey === 'loc_Name'}
+                      direction={sortDir}
+                      onClick={() => handleSort('loc_Name')}
+                    >
+                      Локация
+                    </Th>
+
+                    <Th
+                      sortable
+                      active={sortKey === 'uslp_DateBegin'}
+                      direction={sortDir}
+                      onClick={() => handleSort('uslp_DateBegin')}
+                    >
+                      Начало
+                    </Th>
+
+                    <Th
+                      sortable
+                      active={sortKey === 'uslp_DateEnd'}
+                      direction={sortDir}
+                      onClick={() => handleSort('uslp_DateEnd')}
+                    >
+                      Завершение
+                    </Th>
+
+                    <Th
+                      sortable
+                      active={sortKey === 'duration'}
+                      direction={sortDir}
+                      onClick={() => handleSort('duration')}
+                    >
+                      Итого
+                    </Th>
                   </tr>
                 </thead>
+
                 <tbody className="divide-y divide-gray-100">
-                  {filteredFinished.map((r) => (
+                  {sortedFinished.map((r) => (
                     <tr
                       key={`${r.usr_ID}-${r.uslp_DateBegin}`}
                       className="hover:bg-gray-50/60"
                     >
                       {/* Сотрудник */}
                       <Td className="font-medium">{r.usr_Name}</Td>
+
+                      {/* Должность */}
+                      <Td>{r.usrr_Name ?? '—'}</Td>
 
                       {/* Локация */}
                       <Td>{r.loc_Name || '—'}</Td>
