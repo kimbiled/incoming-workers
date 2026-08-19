@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "build:stable": "node --max-old-space-size=4096 node_modules/next/dist/bin/next build",
+    "start": "node -e \"console.log('Static export is in out/. Start Caddy instead of Next.js.')\"",
+    "start:stable": "node -e \"console.log('Static export is in out/. Start Caddy instead of Next.js.')\"",
     "lint": "eslint"
   },
   "dependencies": {

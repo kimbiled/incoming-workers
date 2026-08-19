@@ -6,7 +6,7 @@ import HeaderBar from "@/components/HeaderBar";
 
 export default function FarhiPage() {
   const [date, setDate] = useState(() => dayjs());
-  const [pollMs, setPollMs] = useState(
+  const [pollMs] = useState(
     Number(process.env.NEXT_PUBLIC_DEFAULT_POLL_MS ?? 15000)
   );
   const dateParam = useMemo(() => date.format("DD.MM.YYYY"), [date]);
@@ -16,8 +16,6 @@ export default function FarhiPage() {
       <HeaderBar
         date={date}
         setDate={setDate}
-        pollMs={pollMs}
-        setPollMs={setPollMs}
       />
       <main className="mx-auto max-w-7xl px-4 py-4">
         <LivePresencePanel

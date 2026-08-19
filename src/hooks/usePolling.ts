@@ -1,15 +1,15 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type DependencyList } from 'react';
 
 export function usePolling(
   cb: () => void,
   intervalMs: number,
-  deps: any[] = [],
+  deps: DependencyList = [],
 ) {
   const ref = useRef<number | null>(null);
   useEffect(() => {
     cb();
     if (ref.current) window.clearInterval(ref.current);
-    ref.current = window.setInterval(cb, intervalMs) as any;
+    ref.current = window.setInterval(cb, intervalMs);
     return () => {
       if (ref.current) window.clearInterval(ref.current);
     };

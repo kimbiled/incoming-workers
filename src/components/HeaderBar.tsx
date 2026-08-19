@@ -1,18 +1,13 @@
 'use client';
 import React from 'react';
 import dayjs from 'dayjs';
-import { classNames } from '@/lib/classNames';
 
 export default function HeaderBar({
   date,
   setDate,
-  pollMs,
-  setPollMs,
 }: {
   date: dayjs.Dayjs;
   setDate: (d: dayjs.Dayjs) => void;
-  pollMs: number;
-  setPollMs: (n: number) => void;
 }) {
   return (
     <div className="sticky top-0 z-20 border-b border-gray-200 bg-white/90 backdrop-blur">
@@ -34,20 +29,6 @@ export default function HeaderBar({
               onChange={(e) => setDate(dayjs(e.target.value))}
               className="rounded-md outline-none"
             />
-          </label>
-          <label className="flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-2 py-1 text-sm shadow-sm">
-            <span className="text-gray-600">Интервал</span>
-            <select
-              value={pollMs}
-              onChange={(e) => setPollMs(Number(e.target.value))}
-              className="rounded-md outline-none"
-            >
-              <option value={5000}>5 сек</option>
-              <option value={10000}>10 сек</option>
-              <option value={15000}>15 сек</option>
-              <option value={30000}>30 сек</option>
-              <option value={60000}>1 мин</option>
-            </select>
           </label>
         </div>
       </div>

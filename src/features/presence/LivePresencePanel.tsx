@@ -1,59 +1,53 @@
 'use client';
-import React, { useEffect, useMemo, useState } from 'react';
-import dayjs from 'dayjs';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import SectionTitle from '@/components/SectionTitle';
 import SkeletonGrid from '@/components/SkeletonGrid';
 import EmptyState from '@/components/EmptyState';
-import ShiftCard from '@/components/ShiftCard';
-import { Th, Td } from '@/components/Table';
+import SystemStatusBadge from '@/components/SystemStatusBadge';
 import { usePresence } from '@/hooks/usePresence';
 import { usePolling } from '@/hooks/usePolling';
 import { fmtTime, durationHHmm } from '@/lib/date';
 import type { Presence } from '@/types/presence';
 
+type PresenceGroup = {
+  key: string;
+  name: string;
+  role: string;
+  location: string;
+  shifts: Presence[];
+};
+
+type SortKey = 'name' | 'role' | 'location' | 'arrival' | 'leave' | 'total';
+type SortState = {
+  key: SortKey;
+  direction: 'asc' | 'desc';
+} | null;
+
 export default function LivePresencePanel({
   dateParam,
   pollMs,
   locationFilter,
+  refreshToken = 0,
 }: {
   dateParam: string;
   pollMs: number;
-  locationFilter?: string | null;
+  locationFilter?: string | string[] | null;
+  refreshToken?: number;
 }) {
   const { rows, loading, error, load } = usePresence();
   const [query, setQuery] = useState('');
-  type SortKey =
-    | 'usr_Name'
-    | 'usrr_Name'
-    | 'loc_Name'
-    | 'uslp_DateBegin'
-    | 'uslp_DateEnd'
-    | 'duration';
-  type SortDir = 'none' | 'asc' | 'desc';
-
-  const [sortKey, setSortKey] = useState<SortKey>('uslp_DateBegin');
-  const [sortDir, setSortDir] = useState<SortDir>('none');
-
-  const handleSort = (key: SortKey) => {
-    if (sortKey !== key) {
-      setSortKey(key);
-      setSortDir('asc');
-      return;
-    }
-    setSortDir((prev) =>
-      prev === 'none' ? 'asc' : prev === 'asc' ? 'desc' : 'none',
-    );
-  };
+  const [sort, setSort] = useState<SortState>(null);
 
   usePolling(() => load(dateParam), pollMs, [dateParam]);
   useEffect(() => {
     load(dateParam);
   }, [dateParam, load]);
 
-  const selectedDay = useMemo(
-    () => dayjs(dateParam, 'DD.MM.YYYY'),
-    [dateParam],
-  );
+  useEffect(() => {
+    if (refreshToken > 0) {
+      load(dateParam);
+    }
+  }, [refreshToken, dateParam, load]);
 
   const rowsForDay = useMemo(() => {
     if (!dateParam) return rows;
@@ -70,27 +64,21 @@ export default function LivePresencePanel({
     });
   }, [rows, dateParam]);
 
-  const sorted = useMemo(() => {
+  const rowsByDefaultTime = useMemo(() => {
     return [...rowsForDay].sort(
       (a, b) =>
-        new Date(b.uslp_DateBegin).valueOf() -
-        new Date(a.uslp_DateBegin).valueOf(),
+        new Date(a.uslp_DateBegin).valueOf() -
+        new Date(b.uslp_DateBegin).valueOf(),
     );
   }, [rowsForDay]);
 
   const active = useMemo(() => {
-    const base = sorted.filter((r) => !r.uslp_DateEnd);
+    const base = rowsByDefaultTime.filter((r) => !r.uslp_DateEnd);
     if (!locationFilter) return base;
-    return base.filter((r) => r.loc_Name === locationFilter);
-  }, [sorted, locationFilter]);
+    return base.filter((r) => matchesLocation(r.loc_Name, locationFilter));
+  }, [rowsByDefaultTime, locationFilter]);
 
-  const finished = useMemo(() => {
-    const base = sorted.filter((r) => !!r.uslp_DateEnd);
-    if (!locationFilter) return base;
-    return base.filter((r) => r.loc_Name === locationFilter);
-  }, [sorted, locationFilter]);
-
-  const filterByQuery = (arr: Presence[]) => {
+  const filterByQuery = useCallback((arr: Presence[]) => {
     if (!query.trim()) return arr;
     const q = query.toLowerCase();
     return arr.filter(
@@ -99,70 +87,28 @@ export default function LivePresencePanel({
         r.loc_Name?.toLowerCase().includes(q) ||
         r.usrr_Name?.toLowerCase().includes(q),
     );
-  };
+  }, [query]);
 
-  const filteredActive = useMemo(() => filterByQuery(active), [active, query]);
+  const filteredActive = useMemo(() => filterByQuery(active), [active, filterByQuery]);
 
-  const filteredFinished = useMemo(
-    () => filterByQuery(finished),
-    [finished, query],
-  );
+  const filteredRows = useMemo(() => {
+    const base = locationFilter
+      ? rowsByDefaultTime.filter((row) => matchesLocation(row.loc_Name, locationFilter))
+      : rowsByDefaultTime;
+    return filterByQuery(base);
+  }, [rowsByDefaultTime, locationFilter, filterByQuery]);
 
-  const sortedFinished = useMemo(() => {
-    if (sortDir === 'none') return filteredFinished;
+  const displayRows = useMemo(() => dedupePresenceRows(filteredRows), [filteredRows]);
+  const displayActive = useMemo(() => dedupePresenceRows(filteredActive), [filteredActive]);
+  const groupedRows = useMemo(() => groupPresenceRows(displayRows, sort), [displayRows, sort]);
 
-    const arr = [...filteredFinished];
-
-    const getDurationMs = (r: Presence) => {
-      const start = new Date(r.uslp_DateBegin).valueOf();
-      const end = r.uslp_DateEnd
-        ? new Date(r.uslp_DateEnd).valueOf()
-        : Date.now();
-      return end - start;
-    };
-
-    arr.sort((a, b) => {
-      const dir = sortDir === 'asc' ? 1 : -1;
-
-      let va: string | number = '';
-      let vb: string | number = '';
-
-      switch (sortKey) {
-        case 'usr_Name':
-          va = a.usr_Name;
-          vb = b.usr_Name;
-          break;
-        case 'usrr_Name':
-          va = a.usrr_Name ?? '';
-          vb = b.usrr_Name ?? '';
-          break;
-        case 'loc_Name':
-          va = a.loc_Name ?? '';
-          vb = b.loc_Name ?? '';
-          break;
-        case 'uslp_DateBegin':
-          va = new Date(a.uslp_DateBegin).valueOf();
-          vb = new Date(b.uslp_DateBegin).valueOf();
-          break;
-        case 'uslp_DateEnd':
-          va = a.uslp_DateEnd ? new Date(a.uslp_DateEnd).valueOf() : 0;
-          vb = b.uslp_DateEnd ? new Date(b.uslp_DateEnd).valueOf() : 0;
-          break;
-        case 'duration':
-          va = getDurationMs(a);
-          vb = getDurationMs(b);
-          break;
-      }
-
-      if (typeof va === 'number' && typeof vb === 'number') {
-        return (va - vb) * dir;
-      }
-
-      return String(va).localeCompare(String(vb), 'ru') * dir;
+  function toggleSort(key: SortKey) {
+    setSort((current) => {
+      if (!current || current.key !== key) return { key, direction: 'asc' };
+      if (current.direction === 'asc') return { key, direction: 'desc' };
+      return null;
     });
-
-    return arr;
-  }, [filteredFinished, sortKey, sortDir]);
+  }
 
   return (
     <>
@@ -177,139 +123,99 @@ export default function LivePresencePanel({
             onChange={(e) => setQuery(e.target.value)}
           />
           <button
-            onClick={() => load(dateParam)}
+            onClick={() => load(dateParam, true)}
             className="rounded-xl bg-gray-900 px-3 py-2 text-sm font-medium text-white shadow hover:bg-black"
           >
             Обновить
           </button>
+          {sort && (
+            <button
+              onClick={() => setSort(null)}
+              className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              Сброс
+            </button>
+          )}
         </div>
       </div>
 
       {error && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          Ошибка: {error}
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-800">
+          {error}
         </div>
       )}
-
-      <section className="mb-8">
-        <SectionTitle title="Сейчас на смене" count={filteredActive.length} />
-        {loading && rows.length === 0 ? (
-          <SkeletonGrid />
-        ) : filteredActive.length === 0 ? (
-          <EmptyState text="Никого нет на смене." />
-        ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {filteredActive.map((row) => (
-              <ShiftCard
-                key={`${row.usr_ID}-${row.uslp_DateBegin}`}
-                row={row}
-                live
-              />
-            ))}
-          </div>
-        )}
-      </section>
 
       <section>
         <SectionTitle
           title={`История за ${dateParam}`}
-          count={filteredFinished.length}
+          count={displayRows.length}
         />
+        <SystemStatusBadge />
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-gray-600">
+          <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 font-medium text-emerald-700">
+            <StatusDot active /> На смене: {displayActive.length}
+          </span>
+          <span className="inline-flex items-center gap-2 rounded-full bg-red-50 px-3 py-1 font-medium text-red-700">
+            <StatusDot active={false} /> Не на смене
+          </span>
+        </div>
         {loading && rows.length === 0 ? (
           <SkeletonGrid />
-        ) : filteredFinished.length === 0 ? (
-          <EmptyState text="Пока нет завершённых смен." />
+        ) : displayRows.length === 0 ? (
+          <EmptyState text="Пока нет отметок за выбранный день." />
         ) : (
           <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
             <div className="max-h-[60vh] overflow-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+              <table className="min-w-full border-collapse text-sm">
+                <thead className="sticky top-0 z-10 bg-gray-50">
                   <tr>
-                    <Th
-                      sortable
-                      active={sortKey === 'usr_Name'}
-                      direction={sortDir}
-                      onClick={() => handleSort('usr_Name')}
-                    >
-                      Сотрудник
-                    </Th>
-
-                    <Th
-                      sortable
-                      active={sortKey === 'usrr_Name'}
-                      direction={sortDir}
-                      onClick={() => handleSort('usrr_Name')}
-                    >
-                      Должность
-                    </Th>
-
-                    <Th
-                      sortable
-                      active={sortKey === 'loc_Name'}
-                      direction={sortDir}
-                      onClick={() => handleSort('loc_Name')}
-                    >
-                      Локация
-                    </Th>
-
-                    <Th
-                      sortable
-                      active={sortKey === 'uslp_DateBegin'}
-                      direction={sortDir}
-                      onClick={() => handleSort('uslp_DateBegin')}
-                    >
-                      Начало
-                    </Th>
-
-                    <Th
-                      sortable
-                      active={sortKey === 'uslp_DateEnd'}
-                      direction={sortDir}
-                      onClick={() => handleSort('uslp_DateEnd')}
-                    >
-                      Завершение
-                    </Th>
-
-                    <Th
-                      sortable
-                      active={sortKey === 'duration'}
-                      direction={sortDir}
-                      onClick={() => handleSort('duration')}
-                    >
-                      Итого
-                    </Th>
+                    <GroupedTh sortKey="name" sort={sort} onSort={toggleSort}>Имя</GroupedTh>
+                    <GroupedTh sortKey="role" sort={sort} onSort={toggleSort}>Должность</GroupedTh>
+                    <GroupedTh sortKey="location" sort={sort} onSort={toggleSort}>Локация</GroupedTh>
+                    <GroupedTh sortKey="arrival" sort={sort} onSort={toggleSort}>Приход</GroupedTh>
+                    <GroupedTh sortKey="leave" sort={sort} onSort={toggleSort}>Уход</GroupedTh>
+                    <GroupedTh sortKey="total" sort={sort} onSort={toggleSort}>Итого зафиксировано</GroupedTh>
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-gray-100">
-                  {sortedFinished.map((r) => (
-                    <tr
-                      key={`${r.usr_ID}-${r.uslp_DateBegin}`}
-                      className="hover:bg-gray-50/60"
-                    >
-                      {/* Сотрудник */}
-                      <Td className="font-medium">{r.usr_Name}</Td>
-
-                      {/* Должность */}
-                      <Td>{r.usrr_Name ?? '—'}</Td>
-
-                      {/* Локация */}
-                      <Td>{r.loc_Name || '—'}</Td>
-
-                      {/* Начало */}
-                      <Td>{fmtTime(r.uslp_DateBegin)}</Td>
-
-                      {/* Завершение */}
-                      <Td>{fmtTime(r.uslp_DateEnd)}</Td>
-
-                      {/* ИТОГО */}
-                      <Td className="text-right">
-                        {r.uslp_DateEnd
-                          ? durationHHmm(r.uslp_DateBegin, r.uslp_DateEnd)
-                          : '—'}
-                      </Td>
-                    </tr>
-                  ))}
+                <tbody>
+                  {groupedRows.map((group) =>
+                    group.shifts.map((shift, index) => (
+                      <tr
+                        key={presenceShiftKey(group.key, shift, index)}
+                        className="hover:bg-gray-50/60"
+                      >
+                        {index === 0 && (
+                          <>
+                            <GroupedTd rowSpan={group.shifts.length} strong>
+                              {group.name}
+                            </GroupedTd>
+                            <GroupedTd rowSpan={group.shifts.length}>
+                              {group.role}
+                            </GroupedTd>
+                            <GroupedTd rowSpan={group.shifts.length}>
+                              {group.location}
+                            </GroupedTd>
+                          </>
+                        )}
+                        <GroupedTd center>{fmtTime(shift.uslp_DateBegin)}</GroupedTd>
+                        <GroupedTd center>
+                          {shift.uslp_DateEnd ? (
+                            fmtTime(shift.uslp_DateEnd)
+                          ) : (
+                            <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+                              На смене
+                            </span>
+                          )}
+                        </GroupedTd>
+                        <GroupedTd center strong={Boolean(shift.uslp_DateEnd)}>
+                          {shift.uslp_DateEnd
+                            ? durationHHmm(shift.uslp_DateBegin, shift.uslp_DateEnd)
+                            : '—'}
+                        </GroupedTd>
+                      </tr>
+                    )),
+                  )}
                 </tbody>
               </table>
             </div>
@@ -317,5 +223,266 @@ export default function LivePresencePanel({
         )}
       </section>
     </>
+  );
+}
+
+function presenceShiftKey(groupKey: string, shift: Presence, index: number) {
+  return [
+    groupKey,
+    shift.usr_ID || 'no-user-id',
+    shift.uslp_DateBegin || 'no-begin',
+    shift.uslp_DateEnd || 'open',
+    index,
+  ].join('|');
+}
+
+function groupPresenceRows(rows: Presence[], sort: SortState): PresenceGroup[] {
+  const map = new Map<string, PresenceGroup>();
+
+  for (const row of rows) {
+    const key = employeeGroupKey(row);
+
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        name: row.usr_Name,
+        role: normalizeGroupPart(row.usrr_Name) === 'faceid' ? '—' : row.usrr_Name ?? '—',
+        location: row.loc_Name || '—',
+        shifts: [],
+      });
+    }
+
+    const group = map.get(key);
+    if (!group) continue;
+
+    if (isBetterProfileRow(row, group)) {
+      group.name = row.usr_Name;
+      group.role = row.usrr_Name ?? '—';
+      group.location = row.loc_Name || '—';
+    }
+
+    group.shifts.push(row);
+  }
+
+  const groups = [...map.values()]
+    .map((group) => ({
+      ...group,
+      shifts: [...group.shifts].sort(
+        (a, b) =>
+          new Date(a.uslp_DateBegin).valueOf() -
+          new Date(b.uslp_DateBegin).valueOf(),
+      ),
+    }));
+
+  return groups.sort((a, b) => compareGroups(a, b, sort));
+}
+
+function normalizeGroupPart(value?: string | null) {
+  return (value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[?？]/g, '')
+    .replace(/[ұү]/g, 'у')
+    .replace(/[ә]/g, 'а')
+    .replace(/[і]/g, 'и')
+    .replace(/[ң]/g, 'н')
+    .replace(/[ғ]/g, 'г')
+    .replace(/[қ]/g, 'к')
+    .replace(/[һ]/g, 'х')
+    .replace(/\s+/g, ' ');
+}
+
+function dedupePresenceRows(rows: Presence[]) {
+  const result: Presence[] = [];
+
+  for (const row of rows) {
+    const duplicateIndex = result.findIndex((candidate) => areSameShift(candidate, row));
+
+    if (duplicateIndex >= 0) {
+      result[duplicateIndex] = mergePresenceRows(result[duplicateIndex], row);
+      continue;
+    }
+
+    result.push(row);
+  }
+
+  return result;
+}
+
+function areSameShift(left: Presence, right: Presence) {
+  if (!matchesLocation(left.loc_Name, right.loc_Name || '')) return false;
+  if (!looksLikeSamePerson(left.usr_Name, right.usr_Name)) return false;
+  if (!sameMinute(left.uslp_DateBegin, right.uslp_DateBegin)) return false;
+
+  if (!left.uslp_DateEnd && !right.uslp_DateEnd) return true;
+  if (!left.uslp_DateEnd || !right.uslp_DateEnd) return true;
+  return sameMinute(left.uslp_DateEnd, right.uslp_DateEnd);
+}
+
+function mergePresenceRows(left: Presence, right: Presence): Presence {
+  const official = isFaceIdRow(left) && !isFaceIdRow(right) ? right : left;
+  const fallback = official === left ? right : left;
+
+  return {
+    ...official,
+    usr_Name: official.usr_Name || fallback.usr_Name,
+    usrr_Name: normalizeGroupPart(official.usrr_Name) === 'faceid'
+      ? fallback.usrr_Name || official.usrr_Name
+      : official.usrr_Name,
+    loc_Name: official.loc_Name || fallback.loc_Name,
+    uslp_DateBegin: earlierDate(left.uslp_DateBegin, right.uslp_DateBegin),
+    uslp_DateEnd: official.uslp_DateEnd ?? null,
+  };
+}
+
+function employeeGroupKey(row: Presence) {
+  return [
+    normalizeNameForGrouping(row.usr_Name),
+    normalizeGroupPart(row.loc_Name),
+  ].join('|');
+}
+
+function normalizeNameForGrouping(value?: string | null) {
+  return normalizeGroupPart(value)
+    .replace(/[аеёиоуыэюя]/g, '')
+    .replace(/\s/g, '');
+}
+
+function looksLikeSamePerson(left?: string | null, right?: string | null) {
+  const a = normalizeNameForGrouping(left);
+  const b = normalizeNameForGrouping(right);
+  if (!a || !b) return false;
+  return a === b || a.includes(b) || b.includes(a);
+}
+
+function sameMinute(left?: string | null, right?: string | null) {
+  if (!left || !right) return false;
+  return left.slice(0, 16) === right.slice(0, 16);
+}
+
+function earlierDate(left: string, right: string) {
+  return new Date(left).valueOf() <= new Date(right).valueOf() ? left : right;
+}
+
+function isFaceIdRow(row: Presence) {
+  return row.usr_ID?.startsWith('faceid-') || normalizeGroupPart(row.usrr_Name) === 'faceid';
+}
+
+function isBetterProfileRow(row: Presence, group: PresenceGroup) {
+  if (!isFaceIdRow(row) && normalizeGroupPart(group.role) !== 'faceid') return true;
+  if (group.role === '—' && row.usrr_Name) return true;
+  return false;
+}
+
+function matchesLocation(value: string | null | undefined, filter: string | string[]) {
+  const normalizedValue = normalizeGroupPart(value);
+  const filters = Array.isArray(filter) ? filter : [filter];
+  return filters.some((item) => normalizeGroupPart(item) === normalizedValue);
+}
+
+function compareGroups(a: PresenceGroup, b: PresenceGroup, sort: SortState) {
+  if (!sort) {
+    return (
+      firstArrival(a) - firstArrival(b) ||
+      a.name.localeCompare(b.name, 'ru') ||
+      a.role.localeCompare(b.role, 'ru')
+    );
+  }
+
+  const direction = sort.direction === 'asc' ? 1 : -1;
+  let result = 0;
+
+  if (sort.key === 'name') result = a.name.localeCompare(b.name, 'ru');
+  if (sort.key === 'role') result = a.role.localeCompare(b.role, 'ru');
+  if (sort.key === 'location') result = a.location.localeCompare(b.location, 'ru');
+  if (sort.key === 'arrival') result = firstArrival(a) - firstArrival(b);
+  if (sort.key === 'leave') result = firstLeave(a) - firstLeave(b);
+  if (sort.key === 'total') result = totalClosedMinutes(a) - totalClosedMinutes(b);
+
+  return result * direction || a.name.localeCompare(b.name, 'ru');
+}
+
+function firstArrival(group: PresenceGroup) {
+  return new Date(group.shifts[0]?.uslp_DateBegin ?? '').valueOf() || 0;
+}
+
+function firstLeave(group: PresenceGroup) {
+  const firstClosed = group.shifts.find((shift) => shift.uslp_DateEnd);
+  return new Date(firstClosed?.uslp_DateEnd ?? '').valueOf() || 0;
+}
+
+function totalClosedMinutes(group: PresenceGroup) {
+  return group.shifts.reduce((total, shift) => {
+    if (!shift.uslp_DateEnd) return total;
+    const begin = new Date(shift.uslp_DateBegin).valueOf();
+    const end = new Date(shift.uslp_DateEnd).valueOf();
+    if (Number.isNaN(begin) || Number.isNaN(end) || end < begin) return total;
+    return total + Math.floor((end - begin) / 60000);
+  }, 0);
+}
+
+function GroupedTh({
+  children,
+  sortKey,
+  sort,
+  onSort,
+}: {
+  children: React.ReactNode;
+  sortKey: SortKey;
+  sort: SortState;
+  onSort: (key: SortKey) => void;
+}) {
+  const active = sort?.key === sortKey;
+  return (
+    <th className="border border-gray-200 px-4 py-3 text-center text-xs font-bold uppercase tracking-wide text-gray-700">
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className="inline-flex items-center justify-center gap-1 hover:text-gray-950"
+      >
+        {children}
+        <span className={active ? 'text-gray-950' : 'text-gray-400'}>
+          {active ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
+        </span>
+      </button>
+    </th>
+  );
+}
+
+function GroupedTd({
+  children,
+  rowSpan,
+  strong,
+  center,
+}: {
+  children: React.ReactNode;
+  rowSpan?: number;
+  strong?: boolean;
+  center?: boolean;
+}) {
+  return (
+    <td
+      rowSpan={rowSpan}
+      className={[
+        'border border-gray-200 px-4 py-3 align-middle',
+        center ? 'text-center' : '',
+        strong ? 'font-semibold text-gray-950' : 'text-gray-700',
+      ].join(' ')}
+    >
+      {children}
+    </td>
+  );
+}
+
+function StatusDot({ active }: { active: boolean }) {
+  return (
+    <span
+      className={[
+        'inline-block h-3 w-3 rounded-full',
+        active ? 'bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.12)]' : 'bg-red-500 shadow-[0_0_0_4px_rgba(239,68,68,0.10)]',
+      ].join(' ')}
+      aria-label={active ? 'На смене' : 'Не на смене'}
+      title={active ? 'На смене' : 'Не на смене'}
+    />
   );
 }

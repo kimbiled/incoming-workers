@@ -7,20 +7,30 @@ export function usePresence() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (datebegin: string) => {
+  const load = useCallback(async (datebegin: string, refresh = false) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchPresence(datebegin);
+      const data = await fetchPresence(datebegin, refresh);
       setRows(
         data.map((d: Presence) => ({ ...d, uslp_DateEnd: d.uslp_DateEnd ?? null })),
       );
-    } catch (e: any) {
-      setError(e?.message || 'Ошибка запроса');
+    } catch (e: unknown) {
+      setError(getPresenceErrorMessage(e));
     } finally {
       setLoading(false);
     }
   }, []);
 
   return { rows, loading, error, load };
+}
+
+function getPresenceErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (message === 'Failed to fetch' || message.includes('NetworkError')) {
+    return 'Не удалось обновить данные. Локальные отметки продолжают сохраняться, повторим синхронизацию позже.';
+  }
+
+  return message || 'Ошибка обновления данных';
 }
